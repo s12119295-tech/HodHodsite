@@ -3,27 +3,23 @@ import { supabase } from '../lib/supabase'
 import { HoopoeMark } from '../components/Icons.jsx'
 
 export default function Auth({ needsProfile, onProfileSaved }) {
-  const [step, setStep] = useState(needsProfile ? 'profile' : 'phone')
-  const [phone, setPhone] = useState('')
+  const [step, setStep] = useState(needsProfile ? 'profile' : 'email')
+  const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const normalizePhone = (v) => {
-    let p = v.trim().replace(/\s/g, '')
-    if (p.startsWith('0')) p = '+98' + p.slice(1)
-    if (!p.startsWith('+')) p = '+98' + p
-    return p
-  }
-
   const sendCode = async (e) => {
     e.preventDefault()
     setErr(''); setBusy(true)
-    const { error } = await supabase.auth.signInWithOtp({ phone: normalizePhone(phone) })
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: { shouldCreateUser: true }
+    })
     setBusy(false)
-    if (error) { setErr('ارسال کد ناموفق بود. سرویس پیامک سوپابیس را تنظیم کرده‌اید؟'); return }
+    if (error) { setErr('ارسال کد ناموفق بود. دوباره امتحان کن.'); return }
     setStep('code')
   }
 
@@ -31,10 +27,10 @@ export default function Auth({ needsProfile, onProfileSaved }) {
     e.preventDefault()
     setErr(''); setBusy(true)
     const { data, error } = await supabase.auth.verifyOtp({
-      phone: normalizePhone(phone), token: code, type: 'sms'
+      email: email.trim(), token: code.trim(), type: 'email'
     })
     setBusy(false)
-    if (error) { setErr('کد نادرست است.'); return }
+    if (error) { setErr('کد نادرست یا منقضی‌شده است.'); return }
     const { data: existing } = await supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle()
     if (existing) { onProfileSaved(existing); return }
     setStep('profile')
@@ -49,7 +45,7 @@ export default function Auth({ needsProfile, onProfileSaved }) {
     const { data: taken } = await supabase.from('profiles').select('id').eq('username', uname).maybeSingle()
     if (taken) { setErr('این نام کاربری قبلاً گرفته شده.'); setBusy(false); return }
     const { data: prof, error } = await supabase.from('profiles').insert({
-      id: user.id, name: name.trim(), username: uname, phone: user.phone
+      id: user.id, name: name.trim(), username: uname, email: user.email
     }).select().single()
     setBusy(false)
     if (error) { setErr('ثبت پروفایل ناموفق بود.'); return }
@@ -68,13 +64,13 @@ export default function Auth({ needsProfile, onProfileSaved }) {
 
       <div className="feather-divider" style={{ maxWidth: 140, alignSelf: 'center' }} />
 
-      {step === 'phone' && (
+      {step === 'email' && (
         <form onSubmit={sendCode} className="pop">
           <div className="field">
-            <label>شماره موبایل</label>
+            <label>ایمیل</label>
             <input
-              type="tel" inputMode="numeric" placeholder="09xxxxxxxxx"
-              value={phone} onChange={e => setPhone(e.target.value)} required
+              type="email" placeholder="you@example.com"
+              value={email} onChange={e => setEmail(e.target.value)} required
               dir="ltr" style={{ textAlign: 'left' }}
             />
           </div>
@@ -87,7 +83,7 @@ export default function Auth({ needsProfile, onProfileSaved }) {
 
       {step === 'code' && (
         <form onSubmit={verifyCode} className="pop">
-          <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>کد ارسال‌شده به {phone} را وارد کنید</p>
+          <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>کد ارسال‌شده به {email} را وارد کنید</p>
           <div className="field">
             <label>کد تایید</label>
             <input
