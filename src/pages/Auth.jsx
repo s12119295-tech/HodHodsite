@@ -3,52 +3,42 @@ import { supabase } from '../lib/supabase'
 import { HoopoeMark } from '../components/Icons.jsx'
 
 export default function Auth({ needsProfile, onProfileSaved }) {
-  const [step, setStep] = useState(needsProfile ? 'profile' : 'email')
+  const [step, setStep] = useState(needsProfile ? 'profile' : 'signup')
   const [email, setEmail] = useState('')
-  const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const sendCode = async (e) => {
-    e.preventDefault()
-    setErr(''); setBusy(true)
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: { shouldCreateUser: true }
-    })
-    setBusy(false)
-    if (error) { setErr('ارسال کد ناموفق بود. دوباره امتحان کن.'); return }
-    setStep('code')
-  }
+  const randomPassword = () =>
+    crypto.getRandomValues(new Uint8Array(24)).reduce((s, b) => s + b.toString(16), '')
 
-  const verifyCode = async (e) => {
+  const doSignup = async (e) => {
     e.preventDefault()
     setErr(''); setBusy(true)
-    const { data, error } = await supabase.auth.verifyOtp({
-      email: email.trim(), token: code.trim(), type: 'email'
-    })
-    setBusy(false)
-    if (error) { setErr('کد نادرست یا منقضی‌شده است.'); return }
-    const { data: existing } = await supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle()
-    if (existing) { onProfileSaved(existing); return }
-    setStep('profile')
-  }
 
-  const saveProfile = async (e) => {
-    e.preventDefault()
-    setErr(''); setBusy(true)
-    const { data: { user } } = await supabase.auth.getUser()
     const uname = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '')
     if (uname.length < 3) { setErr('نام کاربری باید حداقل ۳ حرف انگلیسی باشد.'); setBusy(false); return }
     const { data: taken } = await supabase.from('profiles').select('id').eq('username', uname).maybeSingle()
     if (taken) { setErr('این نام کاربری قبلاً گرفته شده.'); setBusy(false); return }
-    const { data: prof, error } = await supabase.from('profiles').insert({
-      id: user.id, name: name.trim(), username: uname, email: user.email
+
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password: randomPassword()
+    })
+    if (error) { setErr('ثبت‌نام ناموفق بود: ' + error.message); setBusy(false); return }
+
+    if (!data.session) {
+      setErr('لطفاً «Confirm email» را در تنظیمات Supabase خاموش کنید تا ورود فوری کار کند.')
+      setBusy(false)
+      return
+    }
+
+    const { data: prof, error: profErr } = await supabase.from('profiles').insert({
+      id: data.user.id, name: name.trim(), username: uname, email: data.user.email
     }).select().single()
     setBusy(false)
-    if (error) { setErr('ثبت پروفایل ناموفق بود.'); return }
+    if (profErr) { setErr('ثبت پروفایل ناموفق بود.'); return }
     onProfileSaved(prof)
   }
 
@@ -64,58 +54,29 @@ export default function Auth({ needsProfile, onProfileSaved }) {
 
       <div className="feather-divider" style={{ maxWidth: 140, alignSelf: 'center' }} />
 
-      {step === 'email' && (
-        <form onSubmit={sendCode} className="pop">
-          <div className="field">
-            <label>ایمیل</label>
-            <input
-              type="email" placeholder="you@example.com"
-              value={email} onChange={e => setEmail(e.target.value)} required
-              dir="ltr" style={{ textAlign: 'left' }}
-            />
-          </div>
-          {err && <p style={{ color: 'var(--danger)', fontSize: 13 }}>{err}</p>}
-          <button className="btn btn-primary" style={{ width: '100%' }} disabled={busy}>
-            {busy ? <span className="spinner" /> : 'دریافت کد تایید'}
-          </button>
-        </form>
-      )}
-
-      {step === 'code' && (
-        <form onSubmit={verifyCode} className="pop">
-          <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>کد ارسال‌شده به {email} را وارد کنید</p>
-          <div className="field">
-            <label>کد تایید</label>
-            <input
-              type="text" inputMode="numeric" placeholder="------"
-              value={code} onChange={e => setCode(e.target.value)} required
-              dir="ltr" style={{ textAlign: 'left', letterSpacing: 4 }}
-            />
-          </div>
-          {err && <p style={{ color: 'var(--danger)', fontSize: 13 }}>{err}</p>}
-          <button className="btn btn-primary" style={{ width: '100%' }} disabled={busy}>
-            {busy ? <span className="spinner" /> : 'تایید'}
-          </button>
-        </form>
-      )}
-
-      {step === 'profile' && (
-        <form onSubmit={saveProfile} className="pop">
-          <div className="field">
-            <label>اسم شما</label>
-            <input type="text" placeholder="مثلاً سارا احمدی" value={name} onChange={e => setName(e.target.value)} required />
-          </div>
-          <div className="field">
-            <label>نام کاربری (فقط حروف انگلیسی و عدد)</label>
-            <input type="text" placeholder="sara_a" dir="ltr" style={{ textAlign: 'left' }}
-              value={username} onChange={e => setUsername(e.target.value)} required />
-          </div>
-          {err && <p style={{ color: 'var(--danger)', fontSize: 13 }}>{err}</p>}
-          <button className="btn btn-primary" style={{ width: '100%' }} disabled={busy}>
-            {busy ? <span className="spinner" /> : 'شروع کن'}
-          </button>
-        </form>
-      )}
+      <form onSubmit={doSignup} className="pop">
+        <div className="field">
+          <label>ایمیل</label>
+          <input
+            type="email" placeholder="you@example.com"
+            value={email} onChange={e => setEmail(e.target.value)} required
+            dir="ltr" style={{ textAlign: 'left' }}
+          />
+        </div>
+        <div className="field">
+          <label>اسم شما</label>
+          <input type="text" placeholder="مثلاً سارا احمدی" value={name} onChange={e => setName(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label>نام کاربری (فقط حروف انگلیسی و عدد)</label>
+          <input type="text" placeholder="sara_a" dir="ltr" style={{ textAlign: 'left' }}
+            value={username} onChange={e => setUsername(e.target.value)} required />
+        </div>
+        {err && <p style={{ color: 'var(--danger)', fontSize: 13 }}>{err}</p>}
+        <button className="btn btn-primary" style={{ width: '100%' }} disabled={busy}>
+          {busy ? <span className="spinner" /> : 'شروع کن'}
+        </button>
+      </form>
     </div>
   )
 }
